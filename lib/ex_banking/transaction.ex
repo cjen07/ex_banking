@@ -6,7 +6,7 @@ defmodule ExBanking.Transaction do
   defstruct [:user, :count, :data, :actions, :flag]
 
   def start_link([user, data]) do
-    state = %Transaction{user: user, data: data, count: 0, actions: :queue.new(), flag: false}
+    state = %Transaction{user: user, data: data, count: 0, actions: [], flag: false}
     GenServer.start_link(__MODULE__, state, name: via_tuple(user))
   end
 
@@ -33,10 +33,11 @@ defmodule ExBanking.Transaction do
     if state.count == 10 do
       {:reply, {:error, :too_many_requests_to_user}, state, 0}
     else
-      new_actions = :queue.cons({request, from}, state.actions)
+      # new_actions = :queue.cons({request, from}, state.actions)
+      new_actions = Enum.sort([{request, from} | state.actions], fn x1, x2 -> elem(x1, 1) < elem(x2, 1) end)
       new_count = state.count + 1;
       new_state = %{state | count: new_count, actions: new_actions, flag: false}
-      {:noreply, new_state, 0}
+      {:noreply, new_state, 100}
     end
   end
 
@@ -50,7 +51,8 @@ defmodule ExBanking.Transaction do
   end
 
   def handle_info(:timeout, state) do
-    case :queue.is_empty(state.actions) do
+    # case :queue.is_empty(state.actions) do
+    case state.actions == [] do
       true ->
         current = self()
         spawn(fn ->
@@ -60,7 +62,8 @@ defmodule ExBanking.Transaction do
         new_state = %{state | flag: true}
         {:noreply, new_state, :hibernate}
       false ->
-        {request, from} = :queue.last(state.actions)
+        # {request, from} = :queue.last(state.actions)
+        {request, from} = hd state.actions
         case request do
           {:deposit, {_, amount, currency}} ->
             deposit(state, from, amount, currency)
@@ -78,8 +81,8 @@ defmodule ExBanking.Transaction do
   defp reply_and_return(state, from, reply, count, new_data, actions) do
     # Process.sleep(100)
     GenServer.reply(from, reply)
-    new_state = %{state | count: count - 1, data: new_data, actions: :queue.liat(actions)}
-    {:noreply, new_state, 0}
+    new_state = %{state | count: count - 1, data: new_data, actions: Enum.drop(actions, 1)}
+    {:noreply, new_state, 100}
   end
 
   defp deposit(state, from, amount, currency) do
