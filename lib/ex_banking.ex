@@ -11,11 +11,8 @@ defmodule ExBanking do
 
   def z(current, n) do
     spawn(fn -> 
-      IO.inspect self()
       data = deposit "cjen", n, "RMB"
-      IO.puts "B"
       send current, {self(), data}
-      IO.puts "C"
     end)
   end
 
@@ -70,15 +67,13 @@ defmodule ExBanking do
   defp do_handle(user, data, request) do
     case Transaction.whereis(user) do
       [{pid, _}] ->
-        IO.puts "Q"
         pid
       _ ->
         case Transaction.Supervisor.start_child(user, data) do
           {:ok, pid} ->
-            IO.puts "P"
+            IO.puts "GenServer #{user} is started"
             pid
           {:error, {:already_started, pid}} ->
-            IO.puts "W"
             pid
         end        
     end

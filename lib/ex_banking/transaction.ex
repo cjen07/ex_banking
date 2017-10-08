@@ -26,18 +26,23 @@ defmodule ExBanking.Transaction do
     user = state.user
     data = state.data
     :ets.insert(ExBanking, {user, data})
+    IO.puts "GenServer #{user} is terminated"
     :ok
   end
 
   def handle_call(request, from, state) do
     if state.count == 10 do
-      {:reply, {:error, :too_many_requests_to_user}, state, 0}
+      {new_actions, {_, new_from}} = 
+        Enum.sort([{request, from} | state.actions], fn x1, x2 -> elem(x1, 1) < elem(x2, 1) end)
+        |> (fn x -> {Enum.drop(x, -1), Enum.at(x, 10)} end).()
+      GenServer.reply(new_from, {:error, :too_many_requests_to_user})
+      new_state = %{state | actions: new_actions, flag: false}
+      {:noreply, new_state, 50}
     else
-      # new_actions = :queue.cons({request, from}, state.actions)
       new_actions = Enum.sort([{request, from} | state.actions], fn x1, x2 -> elem(x1, 1) < elem(x2, 1) end)
       new_count = state.count + 1;
       new_state = %{state | count: new_count, actions: new_actions, flag: false}
-      {:noreply, new_state, 100}
+      {:noreply, new_state, 50}
     end
   end
 
@@ -51,7 +56,6 @@ defmodule ExBanking.Transaction do
   end
 
   def handle_info(:timeout, state) do
-    # case :queue.is_empty(state.actions) do
     case state.actions == [] do
       true ->
         current = self()
@@ -62,7 +66,6 @@ defmodule ExBanking.Transaction do
         new_state = %{state | flag: true}
         {:noreply, new_state, :hibernate}
       false ->
-        # {request, from} = :queue.last(state.actions)
         {request, from} = hd state.actions
         case request do
           {:deposit, {_, amount, currency}} ->
