@@ -45,10 +45,10 @@ defmodule ExBanking.Transaction do
         case type do
           :send -> 
             :too_many_requests_to_sender
-          :recieve -> 
+          :receive -> 
             {_, user, amount, currency, from2} = body
-            feedback(from2, user, {:error, :too_many_requests_to_reciever}, amount, currency)
-            :too_many_requests_to_reciever
+            feedback(from2, user, {:error, :too_many_requests_to_receiver}, amount, currency)
+            :too_many_requests_to_receiver
           _ -> 
             :too_many_requests_to_user
         end
@@ -122,8 +122,8 @@ defmodule ExBanking.Transaction do
             get_balance(state, from, currency)
           {:send, {_, to_user, amount, currency}} ->
             send(state, from, to_user, amount, currency)
-          {:recieve, {_, from_user, amount, currency, from2}} ->
-            recieve(state, from, from_user, amount, currency, from2)
+          {:receive, {_, from_user, amount, currency, from2}} ->
+            receive(state, from, from_user, amount, currency, from2)
         end
     end
   
@@ -176,12 +176,12 @@ defmodule ExBanking.Transaction do
         new_data = Map.update!(data, currency, fn x -> x - amount end)
         new_frozen = Map.update(frozen, currency, amount, fn x -> x + amount end)
         new_state = %{state | data: new_data, frozen: new_frozen, count: count - 1, actions: Enum.drop(actions, 1)}
-        spawn(fn -> forward(to_user, {:recieve, {to_user, state.user, amount, currency, from}}) end)
+        spawn(fn -> forward(to_user, {:receive, {to_user, state.user, amount, currency, from}}) end)
         {:noreply, new_state, 100}
     end
   end
 
-  defp recieve(state, from, from_user, amount, currency, from2) do
+  defp receive(state, from, from_user, amount, currency, from2) do
     %{count: count, data: data, actions: actions} = state
     {new_data, reply} = 
       case Map.get(data, currency) do

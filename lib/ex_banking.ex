@@ -4,16 +4,11 @@ defmodule ExBanking do
 
   def init() do
     case :ets.info(__MODULE__) do
-      :undefined -> :ets.new(__MODULE__, [:ordered_set, :named_table, :public])
+      :undefined -> 
+        :ets.new(__MODULE__, [:ordered_set, :named_table, :public])
+        :ok
       _ -> :ok
     end
-  end
-
-  def z(current, n) do
-    spawn(fn -> 
-      data = deposit "cjen", n, "RMB"
-      send current, {self(), data}
-    end)
   end
 
   def create_user(user) do
