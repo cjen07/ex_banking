@@ -1,4 +1,6 @@
-import ExBanking; init; create_user "cjen";
+import ExBanking; init; create_user "cjen"; create_user "yuan"; deposit "cjen", 5, "RMB"; deposit "yuan", 5, "RMB"
+get_balance "cjen", "RMB"
+send "cjen", "yuan", 3, "RMB"
 import ExBanking; init; create_user "cjen"; deposit "cjen", 5, "RMB"
 {:ok, pid} = ExBanking.Transaction.start_link(["cjen", %{}])
 c = self(); Enum.map(1..15, fn n -> z c, n end) 

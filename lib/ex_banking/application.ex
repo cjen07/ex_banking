@@ -12,7 +12,7 @@ defmodule ExBanking.Application do
       {Registry, keys: :unique, name: Registry.ExBanking},
       {Transaction.Supervisor, []}
     ]
-    opts = [strategy: :one_for_all, name: ExBanking.Supervisor]
+    opts = [strategy: :one_for_one, name: ExBanking.Supervisor]
     Supervisor.start_link(children, opts)
   end
 end

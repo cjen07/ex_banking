@@ -3,10 +3,10 @@ defmodule ExBanking.Transaction do
   alias ExBanking.Transaction
   use GenServer
 
-  defstruct [:user, :count, :data, :actions, :flag]
+  defstruct [:user, :count, :data, :actions, :flag, :frozen]
 
   def start_link([user, data]) do
-    state = %Transaction{user: user, data: data, count: 0, actions: [], flag: false}
+    state = %Transaction{user: user, data: data, count: 0, actions: [], flag: false, frozen: %{}}
     GenServer.start_link(__MODULE__, state, name: via_tuple(user))
   end
 
@@ -30,12 +30,29 @@ defmodule ExBanking.Transaction do
     :ok
   end
 
+  def terminate(reason, state) do
+    IO.inspect reason
+    IO.inspect state
+    :ok
+  end
+
   def handle_call(request, from, state) do
     if state.count == 10 do
-      {new_actions, {_, new_from}} = 
+      {new_actions, {{type, body}, new_from}} = 
         Enum.sort([{request, from} | state.actions], fn x1, x2 -> elem(x1, 1) < elem(x2, 1) end)
         |> (fn x -> {Enum.drop(x, -1), Enum.at(x, 10)} end).()
-      GenServer.reply(new_from, {:error, :too_many_requests_to_user})
+      reply = 
+        case type do
+          :send -> 
+            :too_many_requests_to_sender
+          :recieve -> 
+            {_, user, amount, currency, from2} = body
+            feedback(from2, user, {:error, :too_many_requests_to_reciever}, amount, currency)
+            :too_many_requests_to_reciever
+          _ -> 
+            :too_many_requests_to_user
+        end
+      GenServer.reply(new_from, {:error, reply})
       new_state = %{state | actions: new_actions, flag: false}
       {:noreply, new_state, 50}
     else
@@ -47,11 +64,40 @@ defmodule ExBanking.Transaction do
   end
 
   def handle_cast(:halt, state) do
-    if state.count == 0 && state.flag do
+    if state.count == 0 && state.flag && state.frozen == %{} do
       {:stop, :normal, state}
     else
       new_state = %{state | flag: false}
       {:noreply, new_state, 0}
+    end
+  end
+
+  def handle_cast({:feedback, from2, reply, amount, currency}, state) do
+    %{data: data, frozen: frozen} = state
+    case reply do
+      {:ok, b} ->
+        x = Map.get(data, currency)
+        
+        GenServer.reply(from2, {:ok, x, b})
+        z = Map.get(frozen, currency)
+        new_frozen =
+          cond do
+            z == amount -> Map.delete(frozen, currency)
+            true -> Map.update!(frozen, currency, fn x -> x - amount end)
+          end
+        new_state = %{state | frozen: new_frozen}
+        {:noreply, new_state, 0}
+      _ ->
+        GenServer.reply(from2, reply)
+        z = Map.get(frozen, currency)
+        new_frozen =
+          cond do
+            z == amount -> Map.delete(frozen, currency)
+            true -> Map.update!(frozen, currency, fn x -> x - amount end)
+          end
+        new_data = Map.update!(data, currency, fn x -> x + amount end)
+        new_state = %{state | data: new_data, frozen: new_frozen}
+        {:noreply, new_state, 0}
     end
   end
 
@@ -74,15 +120,16 @@ defmodule ExBanking.Transaction do
             withdraw(state, from, amount, currency)
           {:get_balance, {_, currency}} ->  
             get_balance(state, from, currency)
-          _ ->
-            :ok
+          {:send, {_, to_user, amount, currency}} ->
+            send(state, from, to_user, amount, currency)
+          {:recieve, {_, from_user, amount, currency, from2}} ->
+            recieve(state, from, from_user, amount, currency, from2)
         end
     end
   
   end
 
   defp reply_and_return(state, from, reply, count, new_data, actions) do
-    # Process.sleep(100)
     GenServer.reply(from, reply)
     new_state = %{state | count: count - 1, data: new_data, actions: Enum.drop(actions, 1)}
     {:noreply, new_state, 100}
@@ -117,6 +164,42 @@ defmodule ExBanking.Transaction do
         x -> {data, {:ok, x}}
       end
     reply_and_return(state, from, reply, count, new_data, actions)
+  end
+
+  defp send(state, from, to_user, amount, currency) do
+    %{count: count, data: data, actions: actions, frozen: frozen} = state
+    x = Map.get(data, currency)
+    cond do
+      x == nil || x < amount -> 
+        reply_and_return(state, from, {:error, :not_enough_money}, count, data, actions)
+      true -> 
+        new_data = Map.update!(data, currency, fn x -> x - amount end)
+        new_frozen = Map.update(frozen, currency, amount, fn x -> x + amount end)
+        new_state = %{state | data: new_data, frozen: new_frozen, count: count - 1, actions: Enum.drop(actions, 1)}
+        spawn(fn -> forward(to_user, {:recieve, {to_user, state.user, amount, currency, from}}) end)
+        {:noreply, new_state, 100}
+    end
+  end
+
+  defp recieve(state, from, from_user, amount, currency, from2) do
+    %{count: count, data: data, actions: actions} = state
+    {new_data, reply} = 
+      case Map.get(data, currency) do
+        nil -> {Map.put(data, currency, amount), {:ok, amount}}
+        x -> {Map.update!(data, currency, fn x -> x + amount end), {:ok, x + amount}}
+      end
+    feedback(from2, from_user, reply, amount, currency)
+    reply_and_return(state, from, reply, count, new_data, actions)
+  end
+
+  defp forward(user, request) do
+    [{_, data}] = ExBanking.user_lookup(user)
+    ExBanking.do_handle(user, data, request)
+  end
+
+  defp feedback(from2, user, reply, amount, currency) do
+    [{pid, _}] = Transaction.whereis(user)
+    GenServer.cast(pid, {:feedback, from2, reply, amount, currency})
   end
 
 

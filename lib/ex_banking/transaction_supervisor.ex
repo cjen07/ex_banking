@@ -9,7 +9,7 @@ defmodule ExBanking.Transaction.Supervisor do
 
   def start_child(user, data) do
     child_spec = 
-      Supervisor.child_spec({Transaction, [user, data]}, [restart: :temporary])
+      Supervisor.child_spec({Transaction, [user, data]}, [id: user, restart: :temporary])
       
     Supervisor.start_child(__MODULE__, child_spec)
   end

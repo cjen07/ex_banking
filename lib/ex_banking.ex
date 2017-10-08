@@ -25,8 +25,8 @@ defmodule ExBanking do
     end
   end
 
-  defp user_lookup(user), do: :ets.lookup(__MODULE__, user)
-  defp user_exists?(user), do: user_lookup(user) != []
+  def user_lookup(user), do: :ets.lookup(__MODULE__, user)
+  def user_exists?(user), do: user_lookup(user) != []
   
 
   defp check_string_list(l), do: Enum.all?(l, &is_bitstring/1)
@@ -40,7 +40,7 @@ defmodule ExBanking do
   def get_balance(user, currency), do: handle(:get_balance, {user, currency})
   def send(from_user, to_user, amount, currency), do: handle(:send, {from_user, to_user, amount, currency})
 
-  defp handle(f, args) do
+  def handle(f, args) do
     case check_format(args) do
       false -> {:error, :wrong_arguments}
       true ->
@@ -64,7 +64,7 @@ defmodule ExBanking do
     end 
   end
 
-  defp do_handle(user, data, request) do
+  def do_handle(user, data, request) do
     case Transaction.whereis(user) do
       [{pid, _}] ->
         pid
